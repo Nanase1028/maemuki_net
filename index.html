@@ -51,6 +51,19 @@ details.ref{margin:10px 0; font-size:.85rem;}
 details.ref summary{cursor:pointer; color:var(--main); font-weight:600;}
 details.ref table{border-collapse:collapse; width:100%; margin-top:8px; font-size:.8rem;}
 details.ref th,details.ref td{border:1px solid var(--border); padding:4px 6px; text-align:left;}
+.fb-sec{margin-top:20px; text-align:left;}
+.fb-title{font-weight:700; color:var(--main-dark); margin:18px 0 8px; font-size:.98rem; border-left:4px solid var(--main); padding-left:8px;}
+.score-row{display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid var(--border); font-size:.86rem;}
+.score-row .sname{flex:0 0 44%; line-height:1.35;}
+.score-row .sval{flex:0 0 15%; text-align:right; font-weight:700; white-space:nowrap;}
+.sbar{flex:1; height:10px; background:#e6edf5; border-radius:5px; overflow:hidden;}
+.sbar>div{height:100%; background:var(--main); border-radius:5px;}
+.lv{flex:0 0 auto; font-size:.72rem; font-weight:700; padding:2px 8px; border-radius:999px; white-space:nowrap;}
+.lv.ok{background:#e6f4ea; color:#1e7e34;}
+.lv.mid{background:#fff3cd; color:#8a6d00;}
+.lv.high{background:#fdecea; color:var(--danger);}
+.fb-note{font-size:.78rem; color:var(--sub); margin-top:12px; text-align:left;}
+.consult{background:#fff8e6; border:1px solid #f0d998; border-radius:10px; padding:12px; font-size:.88rem; text-align:left; margin-top:14px;}
 .complete{text-align:center; padding:40px 16px;}
 .complete .mark{font-size:3rem;}
 .spinner{display:inline-block; width:22px; height:22px; border:3px solid #cbd5e1; border-top-color:var(--main); border-radius:50%; animation:spin .8s linear infinite; vertical-align:middle;}
@@ -876,15 +889,98 @@ function submit(){
   ]).then(r => finish(!(r && r.timeout))).catch(() => finish(false));
 }
 
+function lvChip(lv){
+  if(!lv) return "";
+  return '<span class="lv '+lv[0]+'">'+lv[1]+'</span>';
+}
+
+function scoreRow(name, v, min, max, lv, decimals){
+  const shown = (decimals ? v.toFixed(1) : v);
+  const pct = Math.max(0, Math.min(100, Math.round((v-min)/(max-min)*100)));
+  return '<div class="score-row"><div class="sname">'+name+'</div>'
+       + '<div class="sval">'+shown+' <span style="font-weight:400;color:var(--sub);">/'+max+'</span></div>'
+       + '<div class="sbar"><div style="width:'+pct+'%"></div></div>'+lvChip(lv)+'</div>';
+}
+
+function buildFeedback(p){
+  const sc = p.scores;
+  const flags = {high:0, mid:0};
+  const OK = ["ok","目安範囲内"];
+  function mk(lv, noCount){ // レベル判定を集計しつつ返す
+    if(lv && !noCount){ if(lv[0]==="high") flags.high++; else if(lv[0]==="mid") flags.mid++; }
+    return lv;
+  }
+  let h = '<div class="fb-sec">';
+  h += '<div class="fb-title">スクリーニング結果のまとめ</div>';
+  h += scoreRow("ネットの使いすぎ傾向（IAT）", sc.iat_total, 20, 100,
+        mk(sc.iat_total>=70?["high","高め"]:sc.iat_total>=40?["mid","やや高め"]:OK));
+  h += scoreRow("ネット依存質問票（DQ）", sc.dq_total, 0, 8,
+        mk(sc.dq_total>5?["high","高め"]:OK));
+  h += scoreRow("強迫的ネット使用（CIUS）", sc.cius_total, 0, 56, null);
+  const sasTh = p.sex==="男性" ? 22 : (p.sex==="女性" ? 25 : null);
+  h += scoreRow("スマートフォン依存（SAS-SV）", sc.sas_total, 10, 60,
+        mk(sasTh!==null ? (sc.sas_total>=sasTh?["high","高め"]:OK) : null));
+  h += scoreRow("ゲーム障害スクリーニング（IGDT-10）", sc.igdt_total, 0, 9,
+        mk(sc.igdt_total>=5?["high","高め"]:OK));
+  h += scoreRow("ゲーム症傾向（IGDS9-SF）", sc.igds_total, 9, 45, null);
+  h += scoreRow("ゲームズテスト（GAMES）", sc.games_total, 0, 10,
+        mk(sc.games_total>=5?["high","高め"]:OK));
+  h += scoreRow("飲酒（AUDIT）", sc.audit_total, 0, 40,
+        mk(sc.audit_total>=15?["high","高め"]:sc.audit_total>=8?["mid","やや高め"]:OK));
+  const ftndLv = sc.ftnd_total>=7?["high","高い"]:sc.ftnd_total>=3?["mid","普通"]:["ok","低い"];
+  if(ftndLv[0]==="high") flags.high++;
+  h += scoreRow("ニコチン依存（FTND）", sc.ftnd_total, 0, 10, ftndLv);
+  h += scoreRow("ギャンブル（SOGS）", sc.sogs_total, 0, 20,
+        mk(sc.sogs_total>=5?["high","高め"]:OK));
+
+  h += '<div class="fb-title">生活の質（QOL）プロフィール（1～5）</div>';
+  [["全体（生活の質・健康感）", sc.qol_overall],
+   ["身体的領域", sc.qol_physical],
+   ["心理的領域", sc.qol_psych],
+   ["社会的関係", sc.qol_social],
+   ["環境", sc.qol_environ]].forEach(r=>{ h += scoreRow(r[0], r[1], 1, 5, null, true); });
+
+  h += '<details class="ref"><summary>その他の尺度得点を見る</summary><div>';
+  [["変化への気持ち：問題認識（SOCRATES）", sc.socrates_recognition, 7, 35],
+   ["変化への気持ち：両価性", sc.socrates_ambivalence, 4, 20],
+   ["変化への気持ち：実行", sc.socrates_takingsteps, 8, 40],
+   ["過集中傾向", sc.hyperfocus_total, 11, 44],
+   ["衝動性（BIS-11）", sc.bis11_total, 30, 120],
+   ["行動抑制傾向（BIS）", sc.bisbas_bis, 7, 28],
+   ["行動賦活傾向（BAS）", sc.bisbas_bas_total, 13, 52],
+   ["共感性：視点取得", sc.iri_pt, 7, 28],
+   ["共感性：空想", sc.iri_fs, 7, 28],
+   ["共感性：共感的配慮", sc.iri_ec, 7, 28],
+   ["共感性：個人的苦痛", sc.iri_pd, 7, 28],
+   ["感情の気づきにくさ（TAS-20）", sc.tas_total, 20, 100],
+   ["認知的柔軟性（CFS）", sc.cfs_total, 12, 72],
+   ["思考スタイル：合理性（REI）", sc.rei_rational, 20, 100],
+   ["思考スタイル：直観性（REI）", sc.rei_experiential, 20, 100]
+  ].forEach(r=>{ h += scoreRow(r[0], r[1], r[2], r[3], null); });
+  h += '</div></details>';
+
+  if(flags.high > 0){
+    h += '<div class="consult"><b>ご参考：</b>いくつかの項目で得点が高めでした。この結果は診断ではありませんが、ご自身でも気になることがある場合は、主治医または専門の医療機関・相談窓口にご相談ください。</div>';
+  } else if(flags.mid > 0){
+    h += '<div class="consult">一部にやや高めの項目がありました。診断ではありませんので、生活を見直す際の目安としてご活用ください。</div>';
+  } else {
+    h += '<div class="consult" style="background:#eef7f0; border-color:#bfe0c8;">今回の回答では、各スクリーニング得点はいずれも目安の範囲内でした。</div>';
+  }
+  h += '<p class="fb-note">※この結果は自己記入式質問紙の得点集計による目安であり、医学的な診断ではありません。得点は回答時の状態によって変動します。</p>';
+  h += '</div>';
+  return h;
+}
+
 function showComplete(sent, payload){
   document.getElementById("pfill").style.width = "100%";
   document.getElementById("plabel").textContent = "完了";
   let h = '<div class="card complete"><div class="mark">✅</div><h2>ご回答ありがとうございました</h2>';
-  h += '<p style="font-size:.92rem;">回答は以上で終了です。このページを閉じていただいて構いません。</p>';
+  h += '<p style="font-size:.92rem;">回答は以上で終了です。下にあなたの結果のまとめが表示されています。</p>';
   if(!sent){
     h += '<p style="font-size:.85rem; color:var(--danger);">※通信状況により回答データの自動送信が確認できませんでした。お手数ですが、下のボタンから回答ファイルを保存し、研究担当者にお渡しください。</p>';
     h += '<button type="button" class="btn-csv" onclick="downloadCSV()">回答ファイル（CSV）を保存する</button>';
   }
+  h += buildFeedback(payload);
   h += '</div>';
   app.innerHTML = h;
   window._lastPayload = payload;
